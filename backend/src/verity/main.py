@@ -1,6 +1,28 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
+from starlette.concurrency import run_in_threadpool
 
 from verity.api.health_routes import healthRouter
+from verity.config import ApplicationSettings
+from verity.database import createDatabaseEngine
+
+from verity.api.investigationRoutes import investigationRouter
+
+@asynccontextmanager
+async def manageApplicationLifespan(
+    application: FastAPI,
+) -> AsyncIterator[None]:
+    applicationSettings = ApplicationSettings()
+    databaseEngine = createDatabaseEngine(applicationSettings)
+
+    application.state.databaseEngine = databaseEngine
+
+    try:
+        yield
+    finally:
+        await run_in_threadpool(databaseEngine.dispose)
 
 
 def createApplication() -> FastAPI:
@@ -11,10 +33,16 @@ def createApplication() -> FastAPI:
             "root cause analysis, and CAPA management."
         ),
         version="0.1.0",
+        lifespan=manageApplicationLifespan,
     )
 
     application.include_router(
         healthRouter,
+        prefix="/api/v1",
+    )
+    
+    application.include_router(
+        investigationRouter,
         prefix="/api/v1",
     )
 
