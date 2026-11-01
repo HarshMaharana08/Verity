@@ -11,6 +11,7 @@ from verity.database import createDatabaseEngine
 from verity.api.investigationRoutes import investigationRouter
 
 from verity.api.documentRoutes import documentRouter
+from verity.api.processingJobRoutes import processingJobRouter
 
 @asynccontextmanager
 async def manageApplicationLifespan(
@@ -57,6 +58,11 @@ def createApplication() -> FastAPI:
     
     application.include_router(
         documentRouter,
+        prefix="/api/v1",
+    )
+    
+    application.include_router(
+        processingJobRouter,
         prefix="/api/v1",
     )
 
