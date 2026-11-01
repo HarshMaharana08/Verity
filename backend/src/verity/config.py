@@ -1,6 +1,7 @@
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from pathlib import Path
 
 class ApplicationSettings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -28,4 +29,11 @@ class ApplicationSettings(BaseSettings):
     postgresPassword: SecretStr = Field(
         validation_alias="POSTGRES_PASSWORD",
         min_length=1,
+    )
+    
+    documentStorageRoot: Path = Path("storage/documents")
+
+    maxDocumentSizeBytes: int = Field(
+        default=10 * 1024 * 1024,
+        gt=0,
     )

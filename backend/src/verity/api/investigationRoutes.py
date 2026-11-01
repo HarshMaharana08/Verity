@@ -1,17 +1,20 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from verity.databaseSession import getDatabaseSession
 from verity.schemas.investigationSchemas import (
     CreateInvestigationRequest,
+    InvestigationListItemResponse,
+    InvestigationListResponse,
     InvestigationResponse,
 )
 from verity.services.investigationService import (
     createInvestigation,
     getInvestigationById,
+    listInvestigations,
 )
 
 
@@ -41,6 +44,53 @@ def createInvestigationEndpoint(
 
     return InvestigationResponse.model_validate(
         investigationRecord,
+    )
+    
+    
+@investigationRouter.get(
+    "",
+    response_model=InvestigationListResponse,
+    summary="List investigations with pagination",
+)
+def listInvestigationsEndpoint(
+    databaseSession: Annotated[
+        Session,
+        Depends(getDatabaseSession),
+    ],
+    pageSize: Annotated[
+        int,
+        Query(
+            ge=1,
+            le=100,
+            description="Number of investigations to return",
+        ),
+    ] = 20,
+    pageOffset: Annotated[
+        int,
+        Query(
+            ge=0,
+            description="Number of investigations to skip",
+        ),
+    ] = 0,
+) -> InvestigationListResponse:
+    investigationRecords, hasMore = listInvestigations(
+        databaseSession=databaseSession,
+        pageSize=pageSize,
+        pageOffset=pageOffset,
+    )
+
+    investigationItems = [
+        InvestigationListItemResponse.model_validate(
+            investigationRecord,
+        )
+        for investigationRecord in investigationRecords
+    ]
+
+    return InvestigationListResponse(
+        items=investigationItems,
+        pageSize=pageSize,
+        pageOffset=pageOffset,
+        hasMore=hasMore,
     )
 
 

@@ -10,6 +10,8 @@ from verity.database import createDatabaseEngine
 
 from verity.api.investigationRoutes import investigationRouter
 
+from verity.api.documentRoutes import documentRouter
+
 @asynccontextmanager
 async def manageApplicationLifespan(
     application: FastAPI,
@@ -18,6 +20,13 @@ async def manageApplicationLifespan(
     databaseEngine = createDatabaseEngine(applicationSettings)
 
     application.state.databaseEngine = databaseEngine
+    
+    application.state.documentStorageRoot = (
+        applicationSettings.documentStorageRoot.resolve()
+    )
+    application.state.maxDocumentSizeBytes = (
+        applicationSettings.maxDocumentSizeBytes
+    )
 
     try:
         yield
@@ -43,6 +52,11 @@ def createApplication() -> FastAPI:
     
     application.include_router(
         investigationRouter,
+        prefix="/api/v1",
+    )
+    
+    application.include_router(
+        documentRouter,
         prefix="/api/v1",
     )
 

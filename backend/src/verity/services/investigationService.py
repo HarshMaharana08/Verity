@@ -7,6 +7,8 @@ from verity.schemas.investigationSchemas import (
     CreateInvestigationRequest,
 )
 
+from sqlalchemy import select
+
 
 def createInvestigation(
     databaseSession: Session,
@@ -34,3 +36,27 @@ def getInvestigationById(
         Investigation,
         investigationId,
     )
+    
+
+def listInvestigations(
+    databaseSession: Session,
+    pageSize: int,
+    pageOffset: int,
+) -> tuple[list[Investigation], bool]:
+    investigationQuery = (
+        select(Investigation)
+        .order_by(
+            Investigation.createdAt.desc(),
+            Investigation.investigationId.desc(),
+        )
+        .offset(pageOffset)
+        .limit(pageSize + 1)
+    )
+
+    investigationRecords = list(
+        databaseSession.scalars(investigationQuery).all()
+    )
+
+    hasMore = len(investigationRecords) > pageSize
+
+    return investigationRecords[:pageSize], hasMore

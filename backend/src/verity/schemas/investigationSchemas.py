@@ -36,3 +36,19 @@ class InvestigationResponse(BaseModel):
     description: str | None
     status: str
     createdAt: datetime
+    
+    
+class InvestigationListItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    investigationId: UUID
+    title: str
+    status: str
+    createdAt: datetime
+
+
+class InvestigationListResponse(BaseModel):
+    items: list[InvestigationListItemResponse]
+    pageSize: int
+    pageOffset: int
+    hasMore: bool
