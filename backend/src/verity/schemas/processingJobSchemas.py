@@ -15,3 +15,10 @@ class ProcessingJobResponse(BaseModel):
     startedAt: datetime | None = None
     completedAt: datetime | None = None
     errorMessage: str | None = None
+    
+
+class ProcessingJobTextResponse(BaseModel):
+    jobId: UUID
+    documentId: UUID
+    characterCount: int
+    extractedText: str

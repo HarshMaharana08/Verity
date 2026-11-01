@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from verity.databaseSession import getDatabaseSession
 from verity.schemas.processingJobSchemas import (
     ProcessingJobResponse,
+    ProcessingJobTextResponse,
 )
 from verity.services.documentService import (
     DocumentNotFoundError,
@@ -129,3 +130,77 @@ def getDocumentProcessingJobEndpoint(
         ) from None
 
     return ProcessingJobResponse.model_validate(jobRecord)
+
+
+@processingJobRouter.get(
+    "/{investigationId}/documents/{documentId}"
+    "/processingJobs/{jobId}/text",
+    response_model=ProcessingJobTextResponse,
+    summary="Get extracted document text",
+    responses={
+        404: {"description": "Processing job not found"},
+        409: {"description": "Processing job has not succeeded"},
+        500: {"description": "Extracted text could not be retrieved"},
+    },
+)
+def getDocumentProcessingTextEndpoint(
+    investigationId: UUID,
+    documentId: UUID,
+    jobId: UUID,
+    databaseSession: Annotated[
+        Session,
+        Depends(getDatabaseSession),
+    ],
+) -> ProcessingJobTextResponse:
+    try:
+        jobRecord = getDocumentProcessingJob(
+            databaseSession=databaseSession,
+            investigationId=investigationId,
+            documentId=documentId,
+            jobId=jobId,
+        )
+
+    except ProcessingJobNotFoundError as jobError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(jobError),
+        ) from None
+
+    except SQLAlchemyError:
+        processingJobLogger.exception(
+            "Extracted document text could not be retrieved."
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="The extracted text could not be retrieved.",
+        ) from None
+
+    if jobRecord.status != "succeeded":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Extracted text is available only "
+                "for succeeded jobs."
+            ),
+        )
+
+    extractedText = jobRecord.extractedText
+
+    if extractedText is None or not extractedText.strip():
+        processingJobLogger.error(
+            "Succeeded job %s has no extracted text.",
+            jobRecord.jobId,
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="The extracted text could not be retrieved.",
+        )
+
+    return ProcessingJobTextResponse(
+        jobId=jobRecord.jobId,
+        documentId=jobRecord.documentId,
+        characterCount=len(extractedText),
+        extractedText=extractedText,
+    )
