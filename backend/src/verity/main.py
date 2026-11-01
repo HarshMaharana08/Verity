@@ -13,6 +13,8 @@ from verity.api.investigationRoutes import investigationRouter
 from verity.api.documentRoutes import documentRouter
 from verity.api.processingJobRoutes import processingJobRouter
 
+from verity.api.extractionRoutes import extractionRouter
+
 @asynccontextmanager
 async def manageApplicationLifespan(
     application: FastAPI,
@@ -63,6 +65,11 @@ def createApplication() -> FastAPI:
     
     application.include_router(
         processingJobRouter,
+        prefix="/api/v1",
+    )
+    
+    application.include_router(
+        extractionRouter,
         prefix="/api/v1",
     )
 

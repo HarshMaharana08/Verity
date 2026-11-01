@@ -37,3 +37,20 @@ class ApplicationSettings(BaseSettings):
         default=10 * 1024 * 1024,
         gt=0,
     )
+    
+    groqApiKey: SecretStr | None = Field(
+        default=None,
+        validation_alias="GROQ_API_KEY",
+    )
+
+    groqModel: str = Field(
+        default="openai/gpt-oss-20b",
+        validation_alias="GROQ_MODEL",
+        min_length=1,
+    )
+    
+    maxAiInputCharacters: int = Field(
+        default=40_000,
+        validation_alias="MAX_AI_INPUT_CHARACTERS",
+        ge=1,
+    )

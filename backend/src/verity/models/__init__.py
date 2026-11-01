@@ -6,6 +6,9 @@ from verity.models.investigation import Investigation
 from verity.models.investigationDocument import (
     InvestigationDocument,
 )
+from verity.models.incidentExtraction import (
+    IncidentExtractionRecord,
+)
 
 
 __all__ = [
@@ -13,4 +16,5 @@ __all__ = [
     "DocumentProcessingJob",
     "Investigation",
     "InvestigationDocument",
+    "IncidentExtractionRecord",
 ]

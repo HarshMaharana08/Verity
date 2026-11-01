@@ -16,6 +16,8 @@ dependencies = [
     "alembic>=1.14,<2.0",
     "python-multipart>=0.0.20,<1.0",
     "pypdf>=6.0,<7.0",
+    "groq>=1.7,<2.0",
+    "tiktoken>=0.14,<1.0",
 ]
 
 [tool.setuptools.packages.find]
