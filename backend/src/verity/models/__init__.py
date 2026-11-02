@@ -16,6 +16,12 @@ from verity.models.extractionReview import ExtractionReview
 from verity.models.rcaJob import RcaJob
 from verity.models.rcaDraft import RcaDraftRecord
 from verity.models.rcaReview import RcaReview
+from verity.models.rcaEvidenceRequest import RcaEvidenceRequest
+
+from verity.models.rcaEvidenceResponse import (
+    RcaEvidenceResponse,
+    RcaEvidenceResponseDocument,
+)
 
 __all__ = [
     "DatabaseBase",
@@ -29,4 +35,7 @@ __all__ = [
     "RcaJob",
     "RcaDraftRecord",
     "RcaReview",
+    "RcaEvidenceRequest",
+    "RcaEvidenceResponse",
+    "RcaEvidenceResponseDocument",
 ]
