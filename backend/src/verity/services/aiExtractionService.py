@@ -1,6 +1,6 @@
 import json
 
-from groq import APIError, Groq
+from groq import APIConnectionError, APIError, Groq
 from pydantic import ValidationError
 
 from verity.config import ApplicationSettings
@@ -17,11 +17,25 @@ from verity.services.groqRequestBudgetService import (
     groqRequestGate,
     requestTokenBudget,
 )
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from math import isfinite
 
 extractionPromptVersion = "3"
 
 class AiExtractionError(Exception):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        errorCode: str = "aiExtractionFailed",
+        retryable: bool = False,
+        retryAfterSeconds: float | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.errorCode = errorCode
+        self.retryable = retryable
+        self.retryAfterSeconds = retryAfterSeconds
 
 
 extractionSystemPrompt = """
@@ -125,6 +139,57 @@ ACTION EXTRACTION RULES:
   Return an empty collection when no actual action is reported.
 """
 
+def isRetryableProviderError(
+    providerError: APIError,
+) -> bool:
+    if isinstance(providerError, APIConnectionError):
+        return True
+
+    statusCode = getattr(providerError, "status_code", None)
+
+    return (
+        statusCode in {408, 409, 429}
+        or (
+            isinstance(statusCode, int)
+            and 500 <= statusCode <= 599
+        )
+    )
+
+
+def readRetryAfterSeconds(
+    providerError: APIError,
+) -> float | None:
+    response = getattr(providerError, "response", None)
+
+    if response is None:
+        return None
+
+    headerValue = response.headers.get("retry-after")
+
+    if not headerValue:
+        return None
+
+    try:
+        retrySeconds = float(headerValue)
+    except ValueError:
+        try:
+            retryDate = parsedate_to_datetime(headerValue)
+
+            if retryDate.tzinfo is None:
+                retryDate = retryDate.replace(
+                    tzinfo=timezone.utc
+                )
+
+            retrySeconds = (
+                retryDate - datetime.now(timezone.utc)
+            ).total_seconds()
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+    if not isfinite(retrySeconds):
+        return None
+
+    return max(0.0, retrySeconds)
 
 def extractIncidentWithGroq(
     sourceText: str,
@@ -230,10 +295,23 @@ def extractIncidentWithGroq(
             "[REDACTED]",
         )[:1500]
 
+        retryable = isRetryableProviderError(providerError)
+
         raise AiExtractionError(
             f"Groq request failed: type={errorType}, "
             f"HTTP status={statusCode}. "
-            f"Details: {providerMessage}"
+            f"Details: {providerMessage}",
+            errorCode=(
+                "providerTransientFailure"
+                if retryable
+                else "providerRequestRejected"
+            ),
+            retryable=retryable,
+            retryAfterSeconds=(
+                readRetryAfterSeconds(providerError)
+                if retryable
+                else None
+            ),
         ) from None
 
     if not completion.choices:

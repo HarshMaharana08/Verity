@@ -15,11 +15,16 @@ from verity.api.processingJobRoutes import processingJobRouter
 
 from verity.api.extractionRoutes import extractionRouter
 
+from verity.api.aiExtractionJobRoutes import (
+    aiExtractionJobRouter,
+)
+
 @asynccontextmanager
 async def manageApplicationLifespan(
     application: FastAPI,
 ) -> AsyncIterator[None]:
     applicationSettings = ApplicationSettings()
+    application.state.applicationSettings = applicationSettings
     databaseEngine = createDatabaseEngine(applicationSettings)
 
     application.state.databaseEngine = databaseEngine
@@ -70,6 +75,11 @@ def createApplication() -> FastAPI:
     
     application.include_router(
         extractionRouter,
+        prefix="/api/v1",
+    )
+    
+    application.include_router(
+        aiExtractionJobRouter,
         prefix="/api/v1",
     )
 

@@ -9,7 +9,7 @@ from verity.models.investigationDocument import (
 from verity.models.incidentExtraction import (
     IncidentExtractionRecord,
 )
-
+from verity.models.aiExtractionJob import AiExtractionJob
 
 __all__ = [
     "DatabaseBase",
@@ -17,4 +17,5 @@ __all__ = [
     "Investigation",
     "InvestigationDocument",
     "IncidentExtractionRecord",
+    "AiExtractionJob",
 ]
