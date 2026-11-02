@@ -19,6 +19,10 @@ from verity.api.aiExtractionJobRoutes import (
     aiExtractionJobRouter,
 )
 
+from verity.api.extractionReviewRoutes import (
+    extractionReviewRouter,
+)
+
 @asynccontextmanager
 async def manageApplicationLifespan(
     application: FastAPI,
@@ -80,6 +84,11 @@ def createApplication() -> FastAPI:
     
     application.include_router(
         aiExtractionJobRouter,
+        prefix="/api/v1",
+    )
+    
+    application.include_router(
+        extractionReviewRouter,
         prefix="/api/v1",
     )
 
