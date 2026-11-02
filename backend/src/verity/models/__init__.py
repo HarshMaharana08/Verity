@@ -15,6 +15,7 @@ from verity.models.aiExtractionChunk import AiExtractionChunk
 from verity.models.extractionReview import ExtractionReview
 from verity.models.rcaJob import RcaJob
 from verity.models.rcaDraft import RcaDraftRecord
+from verity.models.rcaReview import RcaReview
 
 __all__ = [
     "DatabaseBase",
@@ -27,4 +28,5 @@ __all__ = [
     "ExtractionReview",
     "RcaJob",
     "RcaDraftRecord",
+    "RcaReview",
 ]
