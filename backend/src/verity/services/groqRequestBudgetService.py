@@ -24,6 +24,7 @@ def estimateGroqRequestTokens(
     sourceText: str,
     systemPrompt: str,
     outputSchema: dict[str, object],
+    schemaName: str = "incidentExtraction",
 ) -> int:
     requestContent = {
         "messages": [
@@ -39,7 +40,7 @@ def estimateGroqRequestTokens(
         "response_format": {
             "type": "json_schema",
             "json_schema": {
-                "name": "incidentExtraction",
+                "name": schemaName,
                 "strict": True,
                 "schema": outputSchema,
             },
