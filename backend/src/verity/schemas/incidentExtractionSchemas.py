@@ -57,12 +57,15 @@ class ExtractedFact(BaseModel):
                 "Source quotes must not be empty."
             )
 
+        normalizedValue = " ".join(self.value.split())
+
         if not any(
-            self.value in sourceQuote
+            normalizedValue in " ".join(sourceQuote.split())
             for sourceQuote in self.sourceQuotes
         ):
             raise ValueError(
-                "The value must appear in a supporting quote."
+                "The value must appear in a supporting quote, "
+                "allowing whitespace differences only."
             )
 
         return self

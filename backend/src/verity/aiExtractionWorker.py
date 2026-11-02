@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from verity.config import ApplicationSettings
 from verity.database import createDatabaseEngine
 from verity.models import (
+    AiExtractionChunk,
     AiExtractionJob,
     DocumentProcessingJob,
     IncidentExtractionRecord,
@@ -29,7 +30,17 @@ from verity.services.aiExtractionService import (
 from verity.services.groqRequestBudgetService import (
     getTokenEncoding,
 )
-
+from verity.services.aiChunkService import (
+    AiJobClaimLostError,
+    renewAiJobLease,
+)
+from verity.services.aiChunkExecutionService import (
+    executeAiChunks,
+)
+from verity.services.incidentConsolidationService import (
+    consolidatedExtractionSchemaVersion,
+    consolidateAiChunks,
+)
 
 workerLogger = logging.getLogger(__name__)
 
@@ -173,13 +184,25 @@ def finishAiJob(
     extraction: IncidentExtraction | None = None,
     errorCode: str | None = None,
     errorMessage: str | None = None,
+    useChunkCheckpoints: bool = False,
 ) -> bool:
-    if extraction is None and (
-        errorCode is None or errorMessage is None
-    ):
+    if extraction is not None and useChunkCheckpoints:
         raise ValueError(
-            "Completion requires an extraction or failure details."
+            "Provide an extraction or use chunk checkpoints, "
+            "not both."
         )
+
+    successRequested = (
+        extraction is not None or useChunkCheckpoints
+    )
+
+    if successRequested:
+        if errorCode is not None or errorMessage is not None:
+            raise ValueError(
+                "Successful completion cannot include failure details."
+            )
+    elif errorCode is None or errorMessage is None:
+        raise ValueError("Failure details are required.")
 
     with Session(
         bind=databaseEngine,
@@ -203,7 +226,10 @@ def finishAiJob(
             ):
                 return False
 
-            if extraction is not None:
+            outputData = None
+            resultSchemaVersion = currentJob.schemaVersion
+
+            if successRequested:
                 sourceJob = databaseSession.get(
                     DocumentProcessingJob,
                     currentJob.sourceProcessingJobId,
@@ -225,6 +251,34 @@ def finishAiJob(
                         "could be saved.",
                     )
 
+                if useChunkCheckpoints:
+                    chunkRecords = list(
+                        databaseSession.scalars(
+                            select(AiExtractionChunk)
+                            .where(
+                                AiExtractionChunk.aiJobId
+                                == currentJob.aiJobId
+                            )
+                            .order_by(
+                                AiExtractionChunk.chunkIndex
+                            )
+                        ).all()
+                    )
+
+                    outputData = consolidateAiChunks(
+                        sourceText=sourceJob.extractedText,
+                        chunkRecords=chunkRecords,
+                    )
+
+                    resultSchemaVersion = (
+                        consolidatedExtractionSchemaVersion
+                    )
+
+                elif extraction is not None:
+                    outputData = extraction.model_dump(
+                        mode="json"
+                    )
+
             databaseTime = databaseSession.scalar(
                 select(func.clock_timestamp())
             )
@@ -235,7 +289,12 @@ def finishAiJob(
             ):
                 return False
 
-            if extraction is not None:
+            if successRequested:
+                if outputData is None:
+                    raise ValueError(
+                        "Successful completion requires result data."
+                    )
+
                 resultRecord = IncidentExtractionRecord(
                     sourceProcessingJobId=(
                         currentJob.sourceProcessingJobId
@@ -243,11 +302,9 @@ def finishAiJob(
                     providerName=currentJob.providerName,
                     modelName=currentJob.modelName,
                     promptVersion=currentJob.promptVersion,
-                    schemaVersion=currentJob.schemaVersion,
+                    schemaVersion=resultSchemaVersion,
                     sourceTextSha256=currentJob.sourceTextSha256,
-                    extractedData=extraction.model_dump(
-                        mode="json"
-                    ),
+                    extractedData=outputData,
                 )
 
                 databaseSession.add(resultRecord)
@@ -283,79 +340,6 @@ def finishAiJob(
 
     return True
 
-def scheduleAiJobRetry(
-    databaseEngine: Engine,
-    claimedJob: AiExtractionJob,
-    jobError: AiExtractionError,
-) -> bool:
-    if claimedJob.attemptCount >= maxAttempts:
-        return finishAiJob(
-            databaseEngine=databaseEngine,
-            claimedJob=claimedJob,
-            errorCode="attemptsExhausted",
-            errorMessage=(
-                "Maximum processing attempts reached. "
-                f"Last error: {jobError}"
-            ),
-        )
-
-    backoffSeconds = (
-        65 * (2 ** (claimedJob.attemptCount - 1))
-    )
-
-    retryDelaySeconds = max(
-        backoffSeconds,
-        jobError.retryAfterSeconds or 0.0,
-    )
-
-    with Session(bind=databaseEngine) as databaseSession:
-        with databaseSession.begin():
-            currentJob = databaseSession.scalar(
-                select(AiExtractionJob)
-                .where(
-                    AiExtractionJob.aiJobId
-                    == claimedJob.aiJobId,
-                )
-                .with_for_update()
-            )
-
-            if (
-                currentJob is None
-                or currentJob.status != "processing"
-                or currentJob.leaseToken
-                != claimedJob.leaseToken
-            ):
-                return False
-
-            databaseTime = databaseSession.scalar(
-                select(func.clock_timestamp())
-            )
-
-            if (
-                currentJob.leaseExpiresAt is None
-                or currentJob.leaseExpiresAt <= databaseTime
-            ):
-                return False
-
-            currentJob.status = "queued"
-            currentJob.availableAt = (
-                databaseTime
-                + timedelta(seconds=retryDelaySeconds)
-            )
-            currentJob.completedAt = None
-            currentJob.leaseToken = None
-            currentJob.leaseExpiresAt = None
-            currentJob.errorCode = jobError.errorCode
-            currentJob.errorMessage = str(jobError)
-
-    workerLogger.warning(
-        "AI job %s scheduled for retry in %.1f seconds.",
-        claimedJob.aiJobId,
-        retryDelaySeconds,
-    )
-
-    return True
-
 def processAiJob(
     databaseEngine: Engine,
     applicationSettings: ApplicationSettings,
@@ -373,20 +357,32 @@ def processAiJob(
             claimedJob,
         )
 
-        jobSettings = applicationSettings.model_copy(
-            update={"groqModel": claimedJob.modelName},
+        executeAiChunks(
+            databaseEngine=databaseEngine,
+            applicationSettings=applicationSettings,
+            claimedJob=claimedJob,
+            sourceText=sourceText,
         )
 
-        extraction = extractIncidentWithGroq(
-            sourceText=sourceText,
-            applicationSettings=jobSettings,
+        renewAiJobLease(
+            databaseEngine,
+            claimedJob.aiJobId,
+            claimedJob.leaseToken,
         )
 
         completed = finishAiJob(
             databaseEngine=databaseEngine,
             claimedJob=claimedJob,
-            extraction=extraction,
+            useChunkCheckpoints=True,
         )
+
+    except AiJobClaimLostError:
+        workerLogger.warning(
+            "Stopped AI job %s because its claim "
+            "expired or ownership changed.",
+            claimedJob.aiJobId,
+        )
+        return
 
     except WorkerInputError as jobError:
         completed = finishAiJob(
@@ -410,6 +406,14 @@ def processAiJob(
                 errorCode=jobError.errorCode,
                 errorMessage=str(jobError),
             )
+
+    except ValueError as validationError:
+        completed = finishAiJob(
+            databaseEngine=databaseEngine,
+            claimedJob=claimedJob,
+            errorCode="chunkValidationFailed",
+            errorMessage=str(validationError),
+        )
 
     if not completed:
         workerLogger.warning(

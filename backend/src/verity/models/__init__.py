@@ -10,6 +10,7 @@ from verity.models.incidentExtraction import (
     IncidentExtractionRecord,
 )
 from verity.models.aiExtractionJob import AiExtractionJob
+from verity.models.aiExtractionChunk import AiExtractionChunk
 
 __all__ = [
     "DatabaseBase",
@@ -18,4 +19,5 @@ __all__ = [
     "InvestigationDocument",
     "IncidentExtractionRecord",
     "AiExtractionJob",
+    "AiExtractionChunk",
 ]

@@ -1,3 +1,6 @@
+import re
+from bisect import bisect_right
+
 from dataclasses import dataclass
 from collections.abc import Callable
 
@@ -77,17 +80,39 @@ def splitSourceTextForBudget(
             "already exceed the request budget."
         )
 
-    chunks: list[SourceTextChunk] = []
-    startCharacter = 0
+    # A boundary is a source word's end, or the document's
+    # start/end. Punctuation inside an identifier stays intact.
+    boundaries = sorted(
+        {0, len(sourceText)}
+        | {
+            match.end()
+            for match in re.finditer(r"\S+", sourceText)
+        }
+    )
 
-    while startCharacter < len(sourceText):
-        candidateLength = min(
-            maxChunkCharacters,
-            len(sourceText) - startCharacter,
+    chunks: list[SourceTextChunk] = []
+    startIndex = 0
+
+    while boundaries[startIndex] < len(sourceText):
+        startCharacter = boundaries[startIndex]
+
+        characterLimit = min(
+            startCharacter + maxChunkCharacters,
+            len(sourceText),
         )
 
+        endIndex = (
+            bisect_right(boundaries, characterLimit) - 1
+        )
+
+        if endIndex <= startIndex:
+            raise ValueError(
+                "A whole source word or identifier "
+                "exceeds the character limit."
+            )
+
         while True:
-            endCharacter = startCharacter + candidateLength
+            endCharacter = boundaries[endIndex]
             candidateText = sourceText[
                 startCharacter:endCharacter
             ]
@@ -95,13 +120,16 @@ def splitSourceTextForBudget(
             if estimateTokens(candidateText) <= maxRequestTokens:
                 break
 
-            if candidateLength == 1:
+            if endIndex == startIndex + 1:
                 raise ValueError(
-                    "Even a one-character chunk exceeds "
-                    "the request budget."
+                    "A whole source word or identifier "
+                    "cannot fit the request budget."
                 )
 
-            candidateLength = max(1, candidateLength // 2)
+            endIndex = startIndex + max(
+                1,
+                (endIndex - startIndex) // 2,
+            )
 
         chunks.append(
             SourceTextChunk(
@@ -115,12 +143,22 @@ def splitSourceTextForBudget(
         if endCharacter == len(sourceText):
             break
 
-        # Reduce overlap for small chunks to ensure progress.
-        actualOverlap = min(
+        overlapSize = min(
             overlapCharacters,
-            candidateLength // 4,
+            len(candidateText) // 4,
         )
 
-        startCharacter = endCharacter - actualOverlap
+        desiredStart = endCharacter - overlapSize
+
+        nextIndex = (
+            bisect_right(boundaries, desiredStart) - 1
+        )
+
+        # Ensure overlap never prevents forward progress.
+        startIndex = (
+            nextIndex
+            if nextIndex > startIndex
+            else endIndex
+        )
 
     return chunks
